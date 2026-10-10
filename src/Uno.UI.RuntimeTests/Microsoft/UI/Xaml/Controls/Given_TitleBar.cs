@@ -80,7 +80,7 @@ public class Given_TitleBar
 	}
 
 	[TestMethod]
-	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWin32 | RuntimeTestPlatforms.NativeWinUI)]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWin32 | RuntimeTestPlatforms.SkiaMacOS | RuntimeTestPlatforms.NativeWinUI)]
 	public async Task When_Content_Set_Interactive_Elements_Are_Passthrough()
 	{
 		var content = new Button { Content = "Content" };
@@ -134,6 +134,48 @@ public class Given_TitleBar
 			await TestServices.WindowHelper.WaitForIdle();
 			window.Close();
 		}
+	}
+
+	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaMacOS)]
+	public async Task When_Extended_Into_TitleBar_On_MacOS_Content_Avoids_Traffic_Lights_And_Drags()
+	{
+		var content = new Button { Content = "Content" };
+		var sut = new TitleBar { Title = "My Title", IsBackButtonVisible = true, Content = content };
+		var window = new Window { Content = sut };
+		window.ExtendsContentIntoTitleBar = true;
+		window.SetTitleBar(sut);
+		var activated = false;
+		try
+		{
+			window.Activated += (s, e) => activated = true;
+			window.Activate();
+			await TestServices.WindowHelper.WaitFor(() => activated && content.ActualWidth > 0 && window.AppWindow.TitleBar.LeftInset > 0);
+
+			// WinUI sizes the left padding column straight from LeftInset, so the back button starts after it.
+			var leftInset = window.AppWindow.TitleBar.LeftInset;
+			var backButton = sut.FindFirstDescendant<Button>("PART_BackButton")!;
+			await TestServices.WindowHelper.WaitFor(() => backButton.TransformToVisual(sut).TransformPoint(default).X >= leftInset);
+
+			// SetTitleBar makes the whole TitleBar a Caption region, the TitleBar punches Passthrough holes for its interactive parts.
+			var contentCenter = GetCenter(content);
+			var title = sut.FindFirstDescendant<TextBlock>(t => t.Text == "My Title")!;
+			var titleCenter = GetCenter(title);
+			await TestServices.WindowHelper.WaitFor(() =>
+				Microsoft_UI_Windowing.Given_AppWindowTitleBar.HitTestNonClient(window, contentCenter.X, contentCenter.Y) == 0
+				&& Microsoft_UI_Windowing.Given_AppWindowTitleBar.HitTestNonClient(window, titleCenter.X, titleCenter.Y) == 1);
+		}
+		finally
+		{
+			await TestServices.WindowHelper.WaitForIdle();
+			window.Close();
+		}
+	}
+
+	private static global::Windows.Foundation.Point GetCenter(FrameworkElement element)
+	{
+		var bounds = element.TransformToVisual(null).TransformBounds(new(0, 0, element.ActualWidth, element.ActualHeight));
+		return new(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
 	}
 
 	private static void Invoke(Button button) =>
